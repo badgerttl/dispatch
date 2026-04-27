@@ -541,6 +541,73 @@ export default function App() {
     )
   }
 
+  const handleMoveRequest = async (requestId: string, targetCollectionId: string, targetFolderId: string | null) => {
+    await api.moveRequest(requestId, { collection_id: targetCollectionId, folder_id: targetFolderId })
+    setCollections(prev => {
+      let movedReq: SavedRequest | undefined
+      const without = prev.map(c => {
+        const removeFromFolders = (folders: Folder[]): Folder[] =>
+          folders.map(f => {
+            const found = f.requests.find(r => r.id === requestId)
+            if (found) movedReq = found
+            return { ...f, requests: f.requests.filter(r => r.id !== requestId), subfolders: removeFromFolders(f.subfolders) }
+          })
+        const topFound = c.requests.find(r => r.id === requestId)
+        if (topFound) movedReq = topFound
+        return { ...c, requests: c.requests.filter(r => r.id !== requestId), folders: removeFromFolders(c.folders) }
+      })
+      if (!movedReq) return prev
+      const req = { ...movedReq, collection_id: targetCollectionId }
+      return without.map(c => {
+        if (c.id !== targetCollectionId) return c
+        if (!targetFolderId) return { ...c, requests: [...c.requests, req] }
+        const addToFolder = (folders: Folder[]): Folder[] =>
+          folders.map(f => {
+            if (f.id === targetFolderId) return { ...f, requests: [...f.requests, req] }
+            return { ...f, subfolders: addToFolder(f.subfolders) }
+          })
+        return { ...c, folders: addToFolder(c.folders) }
+      })
+    })
+  }
+
+  const handleMoveFolder = async (folderId: string, sourceCollectionId: string, targetCollectionId: string, targetParentFolderId: string | null) => {
+    const containsId = (folder: Folder, id: string): boolean =>
+      folder.id === id || folder.subfolders.some(sf => containsId(sf, id))
+    const sourceCol = collections.find(c => c.id === sourceCollectionId)
+    const draggedFolder = sourceCol?.folders.reduce<Folder | undefined>((acc, f) => {
+      if (acc) return acc
+      const find = (folder: Folder): Folder | undefined => {
+        if (folder.id === folderId) return folder
+        return folder.subfolders.reduce<Folder | undefined>((a, sf) => a ?? find(sf), undefined)
+      }
+      return find(f)
+    }, undefined)
+    if (draggedFolder && targetParentFolderId && containsId(draggedFolder, targetParentFolderId)) return
+
+    await api.moveFolder(folderId, { collection_id: targetCollectionId, parent_folder_id: targetParentFolderId })
+    setCollections(prev => {
+      let movedFolder: Folder | undefined
+      const without = prev.map(c => {
+        const removeFolder = (folders: Folder[]): Folder[] =>
+          folders.filter(f => { if (f.id === folderId) { movedFolder = f; return false } return true })
+            .map(f => ({ ...f, subfolders: removeFolder(f.subfolders) }))
+        return { ...c, folders: removeFolder(c.folders) }
+      })
+      if (!movedFolder) return prev
+      return without.map(c => {
+        if (c.id !== targetCollectionId) return c
+        if (!targetParentFolderId) return { ...c, folders: [...c.folders, movedFolder!] }
+        const addToFolder = (folders: Folder[]): Folder[] =>
+          folders.map(f => {
+            if (f.id === targetParentFolderId) return { ...f, subfolders: [...f.subfolders, movedFolder!] }
+            return { ...f, subfolders: addToFolder(f.subfolders) }
+          })
+        return { ...c, folders: addToFolder(c.folders) }
+      })
+    })
+  }
+
   const handleExportCollection = async (col: Collection) => {
     const data = await api.exportCollection(col.id)
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -744,6 +811,8 @@ export default function App() {
           onEditCollectionVars={col => setCollectionVarsTarget(col)}
           onRunCollection={col => setRunnerTarget(col)}
           onExportCollection={handleExportCollection}
+          onMoveRequest={handleMoveRequest}
+          onMoveFolder={handleMoveFolder}
         />
 
         <main ref={mainRef} className="flex flex-col flex-1 overflow-hidden">

@@ -28,6 +28,12 @@ export const saveRequest = (data: {
 export const deleteRequest = (id: string) =>
   http.delete(`/requests/${id}`).then(r => r.data)
 
+export const moveRequest = (id: string, data: { collection_id: string; folder_id: string | null }) =>
+  http.patch(`/requests/${id}/move`, data).then(r => r.data)
+
+export const moveFolder = (id: string, data: { collection_id: string; parent_folder_id: string | null }) =>
+  http.patch(`/folders/${id}/move`, data).then(r => r.data)
+
 export const createFolder = (data: { collection_id: string; parent_folder_id?: string | null; name: string }) =>
   http.post<Folder>('/folders', data).then(r => r.data)
 export const deleteFolder = (id: string) => http.delete(`/folders/${id}`).then(r => r.data)

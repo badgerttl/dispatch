@@ -44,6 +44,10 @@ function countRequests(col: Collection): number {
   return col.requests.length + col.folders.reduce((acc, f) => acc + countFolder(f), 0)
 }
 
+type DragData =
+  | { type: 'request'; id: string; sourceCollectionId: string }
+  | { type: 'folder'; id: string; sourceCollectionId: string }
+
 interface Props {
   isOpen: boolean
   collections: Collection[]
@@ -60,6 +64,8 @@ interface Props {
   onEditCollectionVars: (col: Collection) => void
   onRunCollection: (col: Collection) => void
   onExportCollection: (col: Collection) => void
+  onMoveRequest: (requestId: string, targetCollectionId: string, targetFolderId: string | null) => void
+  onMoveFolder: (folderId: string, sourceCollectionId: string, targetCollectionId: string, targetParentFolderId: string | null) => void
 }
 
 export function Sidebar({
@@ -67,6 +73,7 @@ export function Sidebar({
   collections, history, onLoadRequest,
   onCreateCollection, onDeleteCollection, onDeleteRequest, onClearHistory, onRenameHistory, onImport,
   onCreateFolder, onDeleteFolder, onEditCollectionVars, onRunCollection, onExportCollection,
+  onMoveRequest, onMoveFolder,
 }: Props) {
   const [activeTab, setActiveTab] = useState<'collections' | 'history'>('collections')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -79,6 +86,7 @@ export function Sidebar({
   const renameRef = useRef<HTMLInputElement>(null)
   const [addingFolderTo, setAddingFolderTo] = useState<string | null>(null)
   const [newFolderName, setNewFolderName] = useState('')
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   const toggleExpand = (id: string) => {
     setExpanded(prev => {
@@ -125,10 +133,30 @@ export function Sidebar({
     setAddingFolderTo(null)
   }
 
+  const setDrag = (e: React.DragEvent, data: DragData) => {
+    e.dataTransfer.setData('application/dispatch-item', JSON.stringify(data))
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const getDrag = (e: React.DragEvent): DragData | null => {
+    try { return JSON.parse(e.dataTransfer.getData('application/dispatch-item')) }
+    catch { return null }
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverId(null)
+  }
+
+  const dropClass = (id: string) =>
+    dragOverId === id ? 'outline outline-1 outline-violet-500/60 bg-violet-500/10' : ''
+
   const renderRequest = (req: SavedRequest, col: Collection) => (
     <div
       key={req.id}
-      className="group flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-800 cursor-pointer rounded mx-1"
+      draggable
+      onDragStart={e => { e.stopPropagation(); setDrag(e, { type: 'request', id: req.id, sourceCollectionId: col.id }) }}
+      onDragEnd={() => setDragOverId(null)}
+      className="group flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-800 cursor-grab active:cursor-grabbing rounded mx-1"
       onClick={() => onLoadRequest(req)}
     >
       <span
@@ -153,7 +181,24 @@ export function Sidebar({
     return (
       <div key={folder.id}>
         <div
-          className="group flex items-center gap-1 px-2 py-1.5 hover:bg-zinc-800 cursor-pointer"
+          draggable
+          onDragStart={e => { e.stopPropagation(); setDrag(e, { type: 'folder', id: folder.id, sourceCollectionId: col.id }) }}
+          onDragEnd={() => setDragOverId(null)}
+          onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverId(folder.id) }}
+          onDragLeave={handleDragLeave}
+          onDrop={e => {
+            e.preventDefault(); e.stopPropagation(); setDragOverId(null)
+            const data = getDrag(e)
+            if (!data) return
+            if (data.type === 'request') {
+              onMoveRequest(data.id, col.id, folder.id)
+              setExpandedFolders(prev => new Set([...prev, folder.id]))
+            } else if (data.type === 'folder' && data.id !== folder.id) {
+              onMoveFolder(data.id, data.sourceCollectionId, col.id, folder.id)
+              setExpandedFolders(prev => new Set([...prev, folder.id]))
+            }
+          }}
+          className={`group flex items-center gap-1 px-2 py-1.5 hover:bg-zinc-800 cursor-grab active:cursor-grabbing rounded transition-colors ${dropClass(folder.id)}`}
           style={{ paddingLeft: `${(depth + 1) * 12}px` }}
           onClick={e => toggleFolder(folder.id, e)}
         >
@@ -292,7 +337,21 @@ export function Sidebar({
               collections.map(col => (
                 <div key={col.id}>
                   <div
-                    className="group flex items-center gap-1 px-2 py-1.5 hover:bg-zinc-800 cursor-pointer"
+                    onDragOver={e => { e.preventDefault(); setDragOverId(col.id) }}
+                    onDragLeave={handleDragLeave}
+                    onDrop={e => {
+                      e.preventDefault(); setDragOverId(null)
+                      const data = getDrag(e)
+                      if (!data) return
+                      if (data.type === 'request') {
+                        onMoveRequest(data.id, col.id, null)
+                        setExpanded(prev => new Set([...prev, col.id]))
+                      } else if (data.type === 'folder' && data.id !== col.id) {
+                        onMoveFolder(data.id, data.sourceCollectionId, col.id, null)
+                        setExpanded(prev => new Set([...prev, col.id]))
+                      }
+                    }}
+                    className={`group flex items-center gap-1 px-2 py-1.5 hover:bg-zinc-800 cursor-pointer rounded transition-colors ${dropClass(col.id)}`}
                     onClick={() => toggleExpand(col.id)}
                   >
                     <span className="text-zinc-500 flex-shrink-0">

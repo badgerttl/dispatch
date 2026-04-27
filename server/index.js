@@ -190,6 +190,20 @@ app.delete('/api/folders/:id', (req, res) => {
   res.json({ success: true })
 })
 
+app.patch('/api/requests/:id/move', (req, res) => {
+  const { collection_id, folder_id = null } = req.body
+  getDB().prepare('UPDATE requests SET collection_id = ?, folder_id = ? WHERE id = ?')
+    .run(collection_id, folder_id, req.params.id)
+  res.json({ success: true })
+})
+
+app.patch('/api/folders/:id/move', (req, res) => {
+  const { collection_id, parent_folder_id = null } = req.body
+  getDB().prepare('UPDATE folders SET collection_id = ?, parent_folder_id = ? WHERE id = ?')
+    .run(collection_id, parent_folder_id, req.params.id)
+  res.json({ success: true })
+})
+
 // ─── Collection export (Postman v2.1) ─────────────────────────────────────────
 
 function toPostmanRequest(r) {
