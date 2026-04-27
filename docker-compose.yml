@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8002:3000"
+    volumes:
+      - dispatch-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_PATH=/app/data/dispatch.db
+    restart: unless-stopped
+
+volumes:
+  dispatch-data:
